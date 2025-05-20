@@ -183,6 +183,28 @@ class GachaGame:
             ])
         ]
 
+        # Add summon buttons
+        self.summon_buttons = [
+            Button(
+                pygame.Rect(
+                    (WINDOW_WIDTH - button_width) // 2,
+                    start_y + i * (button_height + spacing),
+                    button_width,
+                    button_height
+                ),
+                text,
+                BLUE,
+                PURPLE,
+                NORMAL_FONT,
+                action
+            )
+            for i, (text, action) in enumerate([
+                ("Single Summon (100 Gems)", lambda: self.perform_summon(False)),
+                ("Multi Summon (1000 Gems)", lambda: self.perform_summon(True)),
+                ("Back", lambda: self.set_state("main_menu"))
+            ])
+        ]
+
     def create_character_buttons(self):
         button_width = 150
         button_height = 40
@@ -500,6 +522,8 @@ class GachaGame:
             self.draw_character_select()
         elif self.state == "battle":
             self.draw_battle()
+        elif self.state == "summon":
+            self.draw_summon()
         # Add more states here
 
     def handle_input(self, event):
@@ -509,6 +533,93 @@ class GachaGame:
             self.handle_character_select_input(event)
         elif self.state == "battle":
             self.handle_battle_input(event)
+        elif self.state == "summon":
+            self.handle_summon_input(event)
+
+    def draw_summon(self):
+        # Draw background
+        self.screen.blit(self.backgrounds["summon"], (0, 0))
+        
+        # Draw title
+        title = TITLE_FONT.render("Summon Characters", True, GOLD)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 100))
+        self.screen.blit(title, title_rect)
+        
+        # Draw currency
+        gems_text = NORMAL_FONT.render(f"Gems: {self.gems}", True, WHITE)
+        self.screen.blit(gems_text, (20, 20))
+        
+        # Draw rates info
+        rates_text = [
+            "Summon Rates:",
+            "6★ (LR): 1%",
+            "5★ (SSR): 4%",
+            "4★ (SR): 15%",
+            "3★ (R): 30%",
+            "2★ (N): 50%"
+        ]
+        
+        for i, text in enumerate(rates_text):
+            rate_surface = SMALL_FONT.render(text, True, WHITE)
+            self.screen.blit(rate_surface, (WINDOW_WIDTH - 200, 100 + i * 30))
+        
+        # Draw buttons
+        mouse_pos = pygame.mouse.get_pos()
+        for button in self.summon_buttons:
+            button.draw(self.screen, mouse_pos)
+
+    def handle_summon_input(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = pygame.mouse.get_pos()
+            for button in self.summon_buttons:
+                if button.enabled and button.rect.collidepoint(mouse_pos):
+                    button.action()
+
+    def perform_summon(self, is_multi: bool):
+        cost = 1000 if is_multi else 100
+        if self.gems < cost:
+            self.battle_message = "Not enough gems!"
+            self.battle_message_timer = 60
+            return
+        
+        self.gems -= cost
+        summons = 10 if is_multi else 1
+        
+        for _ in range(summons):
+            roll = random.random() * 100
+            if roll < 1:  # 1% LR
+                rarity = "6★"
+                base_attack = random.randint(25, 30)
+                base_health = random.randint(120, 150)
+            elif roll < 5:  # 4% SSR
+                rarity = "5★"
+                base_attack = random.randint(20, 25)
+                base_health = random.randint(100, 120)
+            elif roll < 20:  # 15% SR
+                rarity = "4★"
+                base_attack = random.randint(15, 20)
+                base_health = random.randint(80, 100)
+            elif roll < 50:  # 30% R
+                rarity = "3★"
+                base_attack = random.randint(10, 15)
+                base_health = random.randint(60, 80)
+            else:  # 50% N
+                rarity = "2★"
+                base_attack = random.randint(5, 10)
+                base_health = random.randint(40, 60)
+            
+            # Generate random character name
+            prefixes = ["Dark", "Light", "Fire", "Water", "Earth", "Wind"]
+            classes = ["Warrior", "Mage", "Archer", "Knight", "Assassin", "Healer"]
+            name = f"{random.choice(prefixes)} {random.choice(classes)}"
+            
+            # Create and add character
+            character = Character(name, rarity, base_attack, base_health)
+            self.characters.append(character)
+            
+            # Show summon result
+            self.battle_message = f"Summoned {name} ({rarity})!"
+            self.battle_message_timer = 60
 
     def run(self):
         running = True
