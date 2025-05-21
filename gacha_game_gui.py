@@ -113,6 +113,14 @@ class GachaGame:
         self.battle_message = ""
         self.battle_message_timer = 0
         
+        # Initialize boss data
+        self.boss_data = [
+            {"name": "Dragon King", "level": 10, "attack": 15, "health": 200, "rarity": "5★"},
+            {"name": "Dark Overlord", "level": 15, "attack": 20, "health": 250, "rarity": "5★"},
+            {"name": "Ancient Golem", "level": 20, "attack": 25, "health": 300, "rarity": "5★"},
+            {"name": "Demon Lord", "level": 25, "attack": 30, "health": 350, "rarity": "6★"}
+        ]
+        
         # Load assets
         self.load_assets()
         
@@ -524,6 +532,8 @@ class GachaGame:
             self.draw_battle()
         elif self.state == "summon":
             self.draw_summon()
+        elif self.state == "battle_prep":
+            self.draw_battle_prep()
         # Add more states here
 
     def handle_input(self, event):
@@ -535,6 +545,8 @@ class GachaGame:
             self.handle_battle_input(event)
         elif self.state == "summon":
             self.handle_summon_input(event)
+        elif self.state == "battle_prep":
+            self.handle_battle_prep_input(event)
 
     def draw_summon(self):
         # Draw background
@@ -620,6 +632,130 @@ class GachaGame:
             # Show summon result
             self.battle_message = f"Summoned {name} ({rarity})!"
             self.battle_message_timer = 60
+
+    def draw_battle_prep(self):
+        # Draw background
+        self.screen.blit(self.backgrounds["battle"], (0, 0))
+        
+        # Draw title
+        title = TITLE_FONT.render("Battle Preparation", True, GOLD)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
+        self.screen.blit(title, title_rect)
+        
+        if not self.characters:
+            msg = HEADER_FONT.render("No characters available! Summon some first.", True, WHITE)
+            msg_rect = msg.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+            self.screen.blit(msg, msg_rect)
+            
+            # Back button
+            back_button = Button(
+                pygame.Rect(20, 20, 100, 40),
+                "Back",
+                RED,
+                PURPLE,
+                NORMAL_FONT,
+                lambda: self.set_state("main_menu")
+            )
+            back_button.draw(self.screen, pygame.mouse.get_pos())
+            return
+        
+        # Draw character selection section
+        char_select_text = HEADER_FONT.render("Select Your Character:", True, WHITE)
+        self.screen.blit(char_select_text, (50, 120))
+        
+        # Draw available characters
+        start_idx = self.current_page * self.chars_per_page
+        end_idx = min(start_idx + self.chars_per_page, len(self.characters))
+        
+        for i, char in enumerate(self.characters[start_idx:end_idx]):
+            x = 50 + (i % 2) * 400
+            y = 180 + (i // 2) * 250
+            self.draw_character_card(char, x, y, char == self.selected_character)
+        
+        # Draw boss selection section
+        boss_select_text = HEADER_FONT.render("Select Your Opponent:", True, WHITE)
+        self.screen.blit(boss_select_text, (50, 500))
+        
+        # Draw boss options
+        for i, boss in enumerate(self.boss_data):
+            button = Button(
+                pygame.Rect(50 + i * 250, 550, 200, 50),
+                f"{boss['name']} Lv.{boss['level']}",
+                PURPLE,
+                RED,
+                NORMAL_FONT,
+                lambda b=boss: self.start_battle(b)
+            )
+            button.draw(self.screen, pygame.mouse.get_pos())
+        
+        # Back button
+        back_button = Button(
+            pygame.Rect(20, 20, 100, 40),
+            "Back",
+            RED,
+            PURPLE,
+            NORMAL_FONT,
+            lambda: self.set_state("main_menu")
+        )
+        back_button.draw(self.screen, pygame.mouse.get_pos())
+
+    def handle_battle_prep_input(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = pygame.mouse.get_pos()
+            
+            # Handle back button
+            back_button = Button(
+                pygame.Rect(20, 20, 100, 40),
+                "Back",
+                RED,
+                PURPLE,
+                NORMAL_FONT,
+                lambda: self.set_state("main_menu")
+            )
+            if back_button.rect.collidepoint(mouse_pos):
+                back_button.action()
+                return
+            
+            # Handle character selection
+            start_idx = self.current_page * self.chars_per_page
+            end_idx = min(start_idx + self.chars_per_page, len(self.characters))
+            
+            for i, char in enumerate(self.characters[start_idx:end_idx]):
+                x = 50 + (i % 2) * 400
+                y = 180 + (i // 2) * 250
+                card_rect = pygame.Rect(x, y, 350, 200)
+                
+                if card_rect.collidepoint(mouse_pos):
+                    self.selected_character = char
+                    return
+            
+            # Handle boss selection
+            if self.selected_character:  # Only allow boss selection if character is selected
+                for i, boss in enumerate(self.boss_data):
+                    button_rect = pygame.Rect(50 + i * 250, 550, 200, 50)
+                    if button_rect.collidepoint(mouse_pos):
+                        self.start_battle(boss)
+                        return
+
+    def start_battle(self, boss_data: dict):
+        if not self.selected_character:
+            self.battle_message = "Select a character first!"
+            self.battle_message_timer = 60
+            return
+        
+        # Create boss character
+        self.current_boss = Character(
+            boss_data["name"],
+            boss_data["rarity"],
+            boss_data["attack"],
+            boss_data["health"]
+        )
+        self.current_boss.level = boss_data["level"]
+        
+        # Switch to battle state
+        self.state = "battle"
+        self.battle_message = "Battle Start!"
+        self.battle_message_timer = 60
 
     def run(self):
         running = True
