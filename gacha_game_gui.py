@@ -2,6 +2,7 @@ import pygame
 import sys
 import time
 import random
+import math
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 import os
@@ -112,6 +113,17 @@ class GachaGame:
         self.battle_animation_frame = 0
         self.battle_message = ""
         self.battle_message_timer = 0
+        
+        # Summon animation state
+        self.summon_animation = {
+            "active": False,
+            "frame": 0,
+            "particles": [],
+            "result": None,
+            "is_multi": False,
+            "results": [],
+            "current_multi_index": 0
+        }
         
         # Initialize shop items
         self.shop_items = [
@@ -565,6 +577,11 @@ class GachaGame:
             self.handle_shop_input(event)
 
     def draw_summon(self):
+        if self.summon_animation["active"]:
+            self.draw_summon_animation()
+            return
+            
+        # Original summon screen drawing code...
         # Draw background
         self.screen.blit(self.backgrounds["summon"], (0, 0))
         
@@ -612,6 +629,7 @@ class GachaGame:
         
         self.gems -= cost
         summons = 10 if is_multi else 1
+        results = []
         
         for _ in range(summons):
             roll = random.random() * 100
@@ -641,13 +659,155 @@ class GachaGame:
             classes = ["Warrior", "Mage", "Archer", "Knight", "Assassin", "Healer"]
             name = f"{random.choice(prefixes)} {random.choice(classes)}"
             
-            # Create and add character
+            # Create character
             character = Character(name, rarity, base_attack, base_health)
-            self.characters.append(character)
+            results.append(character)
+        
+        # Start summon animation
+        self.summon_animation["active"] = True
+        self.summon_animation["frame"] = 0
+        self.summon_animation["is_multi"] = is_multi
+        self.summon_animation["results"] = results
+        self.summon_animation["current_multi_index"] = 0
+        self.summon_animation["particles"] = self.create_particles()
+
+    def create_particles(self, num_particles=50):
+        particles = []
+        for _ in range(num_particles):
+            angle = random.uniform(0, 2 * 3.14159)
+            speed = random.uniform(2, 8)
+            size = random.randint(2, 6)
+            color = random.choice([GOLD, WHITE, PURPLE])
+            particle = {
+                "x": WINDOW_WIDTH // 2,
+                "y": WINDOW_HEIGHT // 2,
+                "dx": math.cos(angle) * speed,
+                "dy": math.sin(angle) * speed,
+                "size": size,
+                "color": color,
+                "life": 255
+            }
+            particles.append(particle)
+        return particles
+
+    def update_particles(self):
+        for particle in self.summon_animation["particles"]:
+            particle["x"] += particle["dx"]
+            particle["y"] += particle["dy"]
+            particle["life"] -= 5
+            if particle["life"] <= 0:
+                self.summon_animation["particles"].remove(particle)
+
+    def draw_summon_animation(self):
+        # Clear screen with dark background
+        self.screen.fill((20, 10, 40))
+        
+        # Update animation frame
+        self.summon_animation["frame"] += 1
+        frame = self.summon_animation["frame"]
+        
+        if frame < 60:  # First second: particle convergence
+            # Draw particles moving toward center
+            self.update_particles()
+            for particle in self.summon_animation["particles"]:
+                alpha = particle["life"]
+                color = particle["color"]
+                if isinstance(color, tuple) and len(color) == 3:
+                    color = (*color, alpha)
+                pygame.draw.circle(
+                    self.screen,
+                    color,
+                    (int(particle["x"]), int(particle["y"])),
+                    particle["size"]
+                )
             
-            # Show summon result
-            self.battle_message = f"Summoned {name} ({rarity})!"
-            self.battle_message_timer = 60
+            # Draw growing circle
+            circle_size = int(frame * 2)
+            pygame.draw.circle(
+                self.screen,
+                (*GOLD, 128),
+                (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2),
+                circle_size
+            )
+            
+        elif frame < 90:  # Flash
+            flash_alpha = min(255, (90 - frame) * 8)
+            flash_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+            flash_surface.fill(WHITE)
+            flash_surface.set_alpha(flash_alpha)
+            self.screen.blit(flash_surface, (0, 0))
+            
+        elif frame < 150:  # Show result
+            if not self.summon_animation["is_multi"]:
+                character = self.summon_animation["results"][0]
+                self.draw_summon_result(character)
+            else:
+                current_index = min(
+                    self.summon_animation["current_multi_index"],
+                    len(self.summon_animation["results"]) - 1
+                )
+                character = self.summon_animation["results"][current_index]
+                self.draw_summon_result(character)
+                
+                if frame % 30 == 0 and self.summon_animation["current_multi_index"] < 9:
+                    self.summon_animation["current_multi_index"] += 1
+                    self.summon_animation["frame"] = 90  # Reset to show next result
+                    self.summon_animation["particles"] = self.create_particles()
+        
+        else:  # End animation
+            if self.summon_animation["is_multi"]:
+                if self.summon_animation["current_multi_index"] < 9:
+                    self.summon_animation["frame"] = 89
+                    return
+            
+            # Add characters to roster
+            for character in self.summon_animation["results"]:
+                self.characters.append(character)
+            
+            # Reset animation state
+            self.summon_animation["active"] = False
+            self.summon_animation["frame"] = 0
+            self.summon_animation["results"] = []
+            self.summon_animation["current_multi_index"] = 0
+
+    def draw_summon_result(self, character):
+        # Draw rarity-based background glow
+        glow_colors = {
+            "6★": (*GOLD, 128),
+            "5★": (255, 128, 0, 128),  # Orange
+            "4★": (192, 0, 255, 128),  # Purple
+            "3★": (0, 128, 255, 128),  # Blue
+            "2★": (192, 192, 192, 128)  # Silver
+        }
+        glow_color = glow_colors.get(character.rarity, (*WHITE, 128))
+        
+        # Draw expanding circles
+        for i in range(3):
+            size = (self.summon_animation["frame"] % 30) * (i + 1) * 2
+            pygame.draw.circle(
+                self.screen,
+                glow_color,
+                (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2),
+                size,
+                3
+            )
+        
+        # Draw character info
+        name_text = TITLE_FONT.render(f"{character.name}", True, WHITE)
+        rarity_text = HEADER_FONT.render(f"{character.rarity}", True, GOLD)
+        stats_text = NORMAL_FONT.render(
+            f"ATK: {character.attack} | HP: {character.health}",
+            True,
+            WHITE
+        )
+        
+        name_rect = name_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50))
+        rarity_rect = rarity_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+        stats_rect = stats_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 50))
+        
+        self.screen.blit(name_text, name_rect)
+        self.screen.blit(rarity_text, rarity_rect)
+        self.screen.blit(stats_text, stats_rect)
 
     def draw_battle_prep(self):
         # Draw background
