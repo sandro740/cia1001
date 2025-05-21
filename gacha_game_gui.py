@@ -99,6 +99,24 @@ class GachaGame:
         pygame.display.set_caption("Gacha Fantasy World")
         self.clock = pygame.time.Clock()
         
+        # Add rarity colors
+        self.rarity_colors = {
+            "6★": (255, 215, 0),     # LR - Gold
+            "5★": (255, 0, 255),     # SSR - Magenta
+            "4★": (148, 0, 211),     # SR - Purple
+            "3★": (0, 191, 255),     # R - Deep Sky Blue
+            "2★": (192, 192, 192)    # N - Silver
+        }
+        
+        # Add rarity glow colors (with alpha)
+        self.rarity_glow_colors = {
+            "6★": (255, 215, 0, 128),    # LR - Gold
+            "5★": (255, 0, 255, 128),    # SSR - Magenta
+            "4★": (148, 0, 211, 128),    # SR - Purple
+            "3★": (0, 191, 255, 128),    # R - Deep Sky Blue
+            "2★": (192, 192, 192, 128)   # N - Silver
+        }
+        
         # Game state
         self.state = "main_menu"  # main_menu, character_select, battle, etc.
         self.characters: List[Character] = []
@@ -377,30 +395,53 @@ class GachaGame:
         card_height = 200
         card_rect = pygame.Rect(x, y, card_width, card_height)
         
-        # Different background color based on rarity
-        rarity_colors = {
-            "6★": (150, 50, 150),
-            "5★": (150, 150, 50),
-            "4★": (100, 100, 150),
-            "3★": (100, 100, 100)
-        }
-        bg_color = rarity_colors.get(char.rarity, GRAY)
+        # Get rarity color
+        bg_color = self.rarity_colors.get(char.rarity, GRAY)
         
-        pygame.draw.rect(self.screen, bg_color, card_rect, border_radius=15)
+        # Create gradient effect
+        gradient_surface = pygame.Surface((card_width, card_height))
+        for i in range(card_height):
+            # Darken color as we go down
+            darkness = 1 - (i / card_height * 0.5)  # 50% darker at bottom
+            gradient_color = tuple(int(c * darkness) for c in bg_color)
+            pygame.draw.line(gradient_surface, gradient_color, (0, i), (card_width, i))
+        
+        # Apply gradient with transparency
+        gradient_surface.set_alpha(180)
+        
+        # Draw base card
+        pygame.draw.rect(self.screen, (40, 40, 40), card_rect, border_radius=15)
+        self.screen.blit(gradient_surface, card_rect, special_flags=pygame.BLEND_ALPHA_SDL2)
+        
+        # Draw border
         if selected:
-            pygame.draw.rect(self.screen, GOLD, card_rect, 3, border_radius=15)
+            # Draw glowing effect for selected cards
+            for i in range(3):
+                border_rect = card_rect.inflate(i * 4, i * 4)
+                pygame.draw.rect(self.screen, bg_color, border_rect, 2, border_radius=15)
         else:
-            pygame.draw.rect(self.screen, WHITE, card_rect, 1, border_radius=15)
+            pygame.draw.rect(self.screen, bg_color, card_rect, 2, border_radius=15)
+        
+        # Draw rarity indicator
+        rarity_width = 60
+        rarity_height = 30
+        rarity_rect = pygame.Rect(x + card_width - rarity_width - 10, y + 10, rarity_width, rarity_height)
+        pygame.draw.rect(self.screen, bg_color, rarity_rect, border_radius=5)
+        pygame.draw.rect(self.screen, WHITE, rarity_rect, 1, border_radius=5)
+        
+        rarity_text = SMALL_FONT.render(char.rarity, True, WHITE)
+        rarity_text_rect = rarity_text.get_rect(center=rarity_rect.center)
+        self.screen.blit(rarity_text, rarity_text_rect)
         
         # Draw character sprite
         sprite_rect = pygame.Rect(x + 10, y + 10, 80, 80)
         if char.sprite:
             self.screen.blit(char.sprite, sprite_rect)
         else:
-            pygame.draw.rect(self.screen, RED, sprite_rect)  # Placeholder
+            pygame.draw.rect(self.screen, bg_color, sprite_rect)  # Use rarity color for placeholder
         
-        # Draw character info
-        name_text = NORMAL_FONT.render(f"{char.name} [{char.rarity}]", True, WHITE)
+        # Draw character info with enhanced styling
+        name_text = NORMAL_FONT.render(char.name, True, WHITE)
         level_text = SMALL_FONT.render(f"Level {char.level}", True, WHITE)
         stats_text = SMALL_FONT.render(f"ATK: {char.attack} | HP: {char.health}/{char.max_health}", True, WHITE)
         exp_text = SMALL_FONT.render(f"EXP: {char.exp}/{char.exp_to_level}", True, WHITE)
@@ -410,16 +451,16 @@ class GachaGame:
         self.screen.blit(stats_text, (x + 100, y + 80))
         self.screen.blit(exp_text, (x + 100, y + 110))
         
-        # Draw exp bar
+        # Draw exp bar with rarity color
         exp_bar_rect = pygame.Rect(x + 100, y + 140, 200, 20)
-        pygame.draw.rect(self.screen, GRAY, exp_bar_rect)
+        pygame.draw.rect(self.screen, (40, 40, 40), exp_bar_rect)
         exp_fill_rect = pygame.Rect(
             exp_bar_rect.x,
             exp_bar_rect.y,
             exp_bar_rect.width * (char.exp / char.exp_to_level),
             exp_bar_rect.height
         )
-        pygame.draw.rect(self.screen, BLUE, exp_fill_rect)
+        pygame.draw.rect(self.screen, bg_color, exp_fill_rect)
         pygame.draw.rect(self.screen, WHITE, exp_bar_rect, 1)
 
     def draw_battle(self):
@@ -677,7 +718,14 @@ class GachaGame:
             angle = random.uniform(0, 2 * 3.14159)
             speed = random.uniform(2, 8)
             size = random.randint(2, 6)
-            color = random.choice([GOLD, WHITE, PURPLE])
+            
+            # Use rarity colors for particles
+            if self.summon_animation["results"]:
+                char = self.summon_animation["results"][0]
+                color = self.rarity_colors.get(char.rarity, WHITE)
+            else:
+                color = random.choice([GOLD, WHITE, PURPLE])
+                
             particle = {
                 "x": WINDOW_WIDTH // 2,
                 "y": WINDOW_HEIGHT // 2,
@@ -771,17 +819,22 @@ class GachaGame:
             self.summon_animation["current_multi_index"] = 0
 
     def draw_summon_result(self, character):
-        # Draw rarity-based background glow
-        glow_colors = {
-            "6★": (*GOLD, 128),
-            "5★": (255, 128, 0, 128),  # Orange
-            "4★": (192, 0, 255, 128),  # Purple
-            "3★": (0, 128, 255, 128),  # Blue
-            "2★": (192, 192, 192, 128)  # Silver
-        }
-        glow_color = glow_colors.get(character.rarity, (*WHITE, 128))
+        # Get rarity-specific colors
+        main_color = self.rarity_colors.get(character.rarity, WHITE)
+        glow_color = self.rarity_glow_colors.get(character.rarity, (*WHITE, 128))
         
-        # Draw expanding circles
+        # Draw background effects based on rarity
+        if character.rarity in ["6★", "5★"]:  # Special effects for highest rarities
+            # Draw multiple rotating circles
+            for i in range(4):
+                angle = (self.summon_animation["frame"] * 2 + i * 45) % 360
+                radius = 100 + i * 30
+                x = WINDOW_WIDTH // 2 + radius * math.cos(math.radians(angle))
+                y = WINDOW_HEIGHT // 2 + radius * math.sin(math.radians(angle))
+                size = 20 + i * 5
+                pygame.draw.circle(self.screen, glow_color, (int(x), int(y)), size)
+        
+        # Draw expanding circles with rarity color
         for i in range(3):
             size = (self.summon_animation["frame"] % 30) * (i + 1) * 2
             pygame.draw.circle(
@@ -792,14 +845,23 @@ class GachaGame:
                 3
             )
         
-        # Draw character info
-        name_text = TITLE_FONT.render(f"{character.name}", True, WHITE)
-        rarity_text = HEADER_FONT.render(f"{character.rarity}", True, GOLD)
+        # Draw character info with enhanced styling
+        name_text = TITLE_FONT.render(character.name, True, WHITE)
+        rarity_text = HEADER_FONT.render(character.rarity, True, main_color)
         stats_text = NORMAL_FONT.render(
             f"ATK: {character.attack} | HP: {character.health}",
             True,
             WHITE
         )
+        
+        # Add subtle glow effect to text for high rarity characters
+        if character.rarity in ["6★", "5★", "4★"]:
+            glow_surface = name_text.copy()
+            glow_surface.fill(glow_color, special_flags=pygame.BLEND_RGBA_MULT)
+            for offset in [(2, 2), (-2, -2), (2, -2), (-2, 2)]:
+                pos = (WINDOW_WIDTH // 2 - name_text.get_width() // 2 + offset[0],
+                      WINDOW_HEIGHT // 2 - 50 + offset[1])
+                self.screen.blit(glow_surface, pos)
         
         name_rect = name_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50))
         rarity_rect = rarity_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
