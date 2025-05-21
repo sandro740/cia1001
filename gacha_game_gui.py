@@ -875,7 +875,12 @@ class GachaGame:
         # Draw background
         self.screen.blit(self.backgrounds["battle"], (0, 0))
         
-        # Draw title
+        # Draw title with background panel
+        title_panel = pygame.Surface((WINDOW_WIDTH, 100))
+        title_panel.fill((20, 10, 40))
+        title_panel.set_alpha(200)
+        self.screen.blit(title_panel, (0, 0))
+        
         title = TITLE_FONT.render("Battle Preparation", True, GOLD)
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
         self.screen.blit(title, title_rect)
@@ -898,10 +903,18 @@ class GachaGame:
             return
         
         # Draw character selection section
-        char_select_text = HEADER_FONT.render("Select Your Character:", True, WHITE)
-        self.screen.blit(char_select_text, (50, 120))
+        section_title = HEADER_FONT.render("Select Your Character", True, WHITE)
+        section_rect = section_title.get_rect(center=(WINDOW_WIDTH // 2, 120))
         
-        # Draw available characters
+        # Draw section title background
+        section_bg = pygame.Surface((section_rect.width + 40, section_rect.height + 20))
+        section_bg.fill((40, 20, 60))
+        section_bg.set_alpha(200)
+        self.screen.blit(section_bg, (section_rect.centerx - section_bg.get_width() // 2, 
+                                    section_rect.centery - section_bg.get_height() // 2))
+        self.screen.blit(section_title, section_rect)
+        
+        # Draw available characters in a grid
         start_idx = self.current_page * self.chars_per_page
         end_idx = min(start_idx + self.chars_per_page, len(self.characters))
         
@@ -911,22 +924,59 @@ class GachaGame:
             self.draw_character_card(char, x, y, char == self.selected_character)
         
         # Draw boss selection section
-        boss_select_text = HEADER_FONT.render("Select Your Opponent:", True, WHITE)
-        self.screen.blit(boss_select_text, (50, 500))
+        boss_title = HEADER_FONT.render("Select Your Opponent", True, WHITE)
+        boss_rect = boss_title.get_rect(center=(WINDOW_WIDTH // 2, 500))
         
-        # Draw boss options
+        # Draw boss section title background
+        boss_bg = pygame.Surface((boss_rect.width + 40, boss_rect.height + 20))
+        boss_bg.fill((40, 20, 60))
+        boss_bg.set_alpha(200)
+        self.screen.blit(boss_bg, (boss_rect.centerx - boss_bg.get_width() // 2,
+                                 boss_rect.centery - boss_bg.get_height() // 2))
+        self.screen.blit(boss_title, boss_rect)
+        
+        # Draw boss options with enhanced styling
+        boss_spacing = 20
+        total_boss_width = sum(250 for _ in self.boss_data) + boss_spacing * (len(self.boss_data) - 1)
+        start_x = (WINDOW_WIDTH - total_boss_width) // 2
+        
         for i, boss in enumerate(self.boss_data):
-            button = Button(
-                pygame.Rect(50 + i * 250, 550, 200, 50),
-                f"{boss['name']} Lv.{boss['level']}",
-                PURPLE,
-                RED,
-                NORMAL_FONT,
-                lambda b=boss: self.start_battle(b)
-            )
-            button.draw(self.screen, pygame.mouse.get_pos())
+            x = start_x + i * (250 + boss_spacing)
+            y = 550
+            
+            # Draw boss card background
+            boss_card = pygame.Surface((230, 100))
+            boss_card.fill((60, 30, 80))
+            boss_card.set_alpha(200)
+            
+            # Add gradient effect
+            for j in range(100):
+                alpha = 255 - int(j * 1.5)
+                line_color = (80, 40, 100, alpha)
+                pygame.draw.line(boss_card, line_color, (0, j), (230, j))
+            
+            self.screen.blit(boss_card, (x, y))
+            
+            # Draw boss info
+            name_text = NORMAL_FONT.render(boss["name"], True, WHITE)
+            level_text = SMALL_FONT.render(f"Level {boss['level']}", True, GOLD)
+            stats_text = SMALL_FONT.render(f"ATK: {boss['attack']} | HP: {boss['health']}", True, WHITE)
+            
+            name_rect = name_text.get_rect(centerx=x + 115, top=y + 15)
+            level_rect = level_text.get_rect(centerx=x + 115, top=y + 45)
+            stats_rect = stats_text.get_rect(centerx=x + 115, top=y + 70)
+            
+            self.screen.blit(name_text, name_rect)
+            self.screen.blit(level_text, level_rect)
+            self.screen.blit(stats_text, stats_rect)
+            
+            # Draw selection border if character is selected
+            if self.selected_character:
+                pygame.draw.rect(self.screen, GOLD, (x, y, 230, 100), 2, border_radius=5)
+            else:
+                pygame.draw.rect(self.screen, (100, 100, 100), (x, y, 230, 100), 2, border_radius=5)
         
-        # Back button
+        # Draw back button with enhanced styling
         back_button = Button(
             pygame.Rect(20, 20, 100, 40),
             "Back",
@@ -936,6 +986,16 @@ class GachaGame:
             lambda: self.set_state("main_menu")
         )
         back_button.draw(self.screen, pygame.mouse.get_pos())
+        
+        # Draw help text if no character selected
+        if not self.selected_character:
+            help_text = NORMAL_FONT.render("Select a character to begin battle!", True, WHITE)
+            help_rect = help_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
+            help_bg = pygame.Surface((help_rect.width + 20, help_rect.height + 10))
+            help_bg.fill((40, 20, 60))
+            help_bg.set_alpha(180)
+            self.screen.blit(help_bg, (help_rect.x - 10, help_rect.y - 5))
+            self.screen.blit(help_text, help_rect)
 
     def handle_battle_prep_input(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -965,13 +1025,21 @@ class GachaGame:
                 
                 if card_rect.collidepoint(mouse_pos):
                     self.selected_character = char
+                    # Play selection sound or effect here
                     return
             
             # Handle boss selection
-            if self.selected_character:  # Only allow boss selection if character is selected
+            if self.selected_character:
+                boss_spacing = 20
+                total_boss_width = sum(250 for _ in self.boss_data) + boss_spacing * (len(self.boss_data) - 1)
+                start_x = (WINDOW_WIDTH - total_boss_width) // 2
+                
                 for i, boss in enumerate(self.boss_data):
-                    button_rect = pygame.Rect(50 + i * 250, 550, 200, 50)
-                    if button_rect.collidepoint(mouse_pos):
+                    x = start_x + i * (250 + boss_spacing)
+                    y = 550
+                    boss_rect = pygame.Rect(x, y, 230, 100)
+                    
+                    if boss_rect.collidepoint(mouse_pos):
                         self.start_battle(boss)
                         return
 
