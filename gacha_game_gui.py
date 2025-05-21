@@ -171,6 +171,45 @@ class GachaGame:
         self.create_character_buttons()
         self.create_battle_buttons()
         
+        # Add skill cooldown and active skill state
+        self.skill_cooldown = 0
+        self.skill_active = False
+        self.skill_animation_frame = 0
+        
+        # Add skill effects dictionary
+        self.skill_effects = {
+            "Warrior": {
+                "name": "Mighty Slash",
+                "damage": 2.0,  # 200% damage
+                "description": "Powerful attack dealing 200% damage"
+            },
+            "Mage": {
+                "name": "Arcane Burst",
+                "damage": 2.5,  # 250% damage
+                "description": "Magical burst dealing 250% damage"
+            },
+            "Archer": {
+                "name": "Precise Shot",
+                "damage": 1.8,  # 180% damage + guaranteed crit
+                "description": "Guaranteed critical hit dealing 180% damage"
+            },
+            "Knight": {
+                "name": "Shield Bash",
+                "damage": 1.5,  # 150% damage + defense buff
+                "description": "Attack and gain 30% defense for 2 turns"
+            },
+            "Assassin": {
+                "name": "Shadow Strike",
+                "damage": 2.2,  # 220% damage
+                "description": "Strike from shadows dealing 220% damage"
+            },
+            "Healer": {
+                "name": "Healing Light",
+                "heal": 0.3,  # Heal 30% max HP
+                "description": "Restore 30% of max HP"
+            }
+        }
+        
     def load_assets(self):
         # Load background images
         self.backgrounds = {
@@ -486,10 +525,27 @@ class GachaGame:
             msg_rect = msg_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
             self.screen.blit(msg_text, msg_rect)
         
+        # Draw skill animation if active
+        if self.skill_active:
+            self.draw_skill_animation(char_x, char_y, boss_x, boss_y)
+        
         # Draw buttons
         mouse_pos = pygame.mouse.get_pos()
         for button in self.battle_buttons:
+            if button.text == "Skill":
+                # Change skill button color based on cooldown
+                if self.skill_cooldown > 0:
+                    button.color = GRAY
+                    button.enabled = False
+                else:
+                    button.color = BLUE
+                    button.enabled = True
             button.draw(self.screen, mouse_pos)
+        
+        # Draw skill cooldown if applicable
+        if self.skill_cooldown > 0:
+            cooldown_text = SMALL_FONT.render(f"Skill CD: {self.skill_cooldown}", True, WHITE)
+            self.screen.blit(cooldown_text, (130, WINDOW_HEIGHT - 90))
 
     def draw_battle_character(self, char, x: int, y: int, is_player: bool):
         # Draw character sprite
@@ -568,8 +624,60 @@ class GachaGame:
         self.battle_message_timer = 60  # Show message for 60 frames
 
     def use_skill(self):
-        # Implement skill usage
-        pass
+        if not self.selected_character or not self.current_boss:
+            return
+            
+        if self.skill_cooldown > 0:
+            self.battle_message = "Skill is on cooldown!"
+            self.battle_message_timer = 60
+            return
+        
+        # Get character class from name
+        char_class = None
+        for class_name in self.skill_effects.keys():
+            if class_name in self.selected_character.name:
+                char_class = class_name
+                break
+        
+        if not char_class:
+            self.battle_message = "No skill available!"
+            self.battle_message_timer = 60
+            return
+        
+        skill = self.skill_effects[char_class]
+        
+        # Start skill animation
+        self.skill_active = True
+        self.skill_animation_frame = 0
+        
+        # Apply skill effect
+        if "heal" in skill:
+            # Healing skill
+            heal_amount = int(self.selected_character.max_health * skill["heal"])
+            self.selected_character.health = min(
+                self.selected_character.health + heal_amount,
+                self.selected_character.max_health
+            )
+            self.battle_message = f"Used {skill['name']}! Healed for {heal_amount} HP!"
+        else:
+            # Damage skill
+            base_damage = random.randint(
+                self.selected_character.attack - 5,
+                self.selected_character.attack + 12
+            )
+            skill_damage = int(base_damage * skill["damage"])
+            
+            # Apply special effects
+            if char_class == "Archer":  # Guaranteed crit
+                skill_damage = int(skill_damage * 1.5)
+            elif char_class == "Knight":  # Defense buff
+                self.selected_character.defense_buff = 2  # Lasts 2 turns
+            
+            self.current_boss.health -= skill_damage
+            self.battle_message = f"Used {skill['name']}! Dealt {skill_damage} damage!"
+        
+        self.battle_message_timer = 60
+        self.skill_cooldown = 3  # Set cooldown to 3 turns
 
     def use_item(self):
         # Implement item usage
@@ -581,8 +689,13 @@ class GachaGame:
             self.current_page = new_page
 
     def update(self):
-        if self.state == "battle" and self.battle_message_timer > 0:
-            self.battle_message_timer -= 1
+        if self.state == "battle":
+            if self.battle_message_timer > 0:
+                self.battle_message_timer -= 1
+            
+            # Update skill cooldown on turn end
+            if self.skill_cooldown > 0 and self.battle_message_timer == 0:
+                self.skill_cooldown -= 1
 
     def draw(self):
         # Clear screen
@@ -1198,6 +1311,79 @@ class GachaGame:
             self.battle_message = "Select a character first!"
         
         self.battle_message_timer = 60
+
+    def draw_skill_animation(self, char_x, char_y, boss_x, boss_y):
+        self.skill_animation_frame += 1
+        frame = self.skill_animation_frame
+        
+        # Get character class
+        char_class = None
+        for class_name in self.skill_effects.keys():
+            if class_name in self.selected_character.name:
+                char_class = class_name
+                break
+        
+        if not char_class:
+            return
+        
+        # Draw skill-specific animations
+        if char_class == "Warrior" or char_class == "Knight":
+            # Slash effect
+            start_x = char_x + 100
+            start_y = char_y + 50
+            end_x = boss_x
+            end_y = boss_y + 50
+            progress = min(frame / 30, 1.0)
+            
+            current_x = start_x + (end_x - start_x) * progress
+            current_y = start_y + (end_y - start_y) * progress
+            
+            pygame.draw.line(self.screen, WHITE, (start_x, start_y), (current_x, current_y), 3)
+            
+        elif char_class == "Mage":
+            # Magic circle effect
+            center_x = boss_x + 50
+            center_y = boss_y + 50
+            radius = frame * 2
+            pygame.draw.circle(self.screen, (255, 0, 255), (center_x, center_y), radius, 2)
+            
+        elif char_class == "Archer":
+            # Arrow effect
+            start_x = char_x + 100
+            start_y = char_y + 50
+            end_x = boss_x
+            end_y = boss_y + 50
+            progress = min(frame / 20, 1.0)
+            
+            current_x = start_x + (end_x - start_x) * progress
+            current_y = start_y + (end_y - start_y) * progress
+            
+            pygame.draw.line(self.screen, (0, 255, 0), (start_x, start_y), (current_x, current_y), 2)
+            
+        elif char_class == "Assassin":
+            # Shadow effect
+            alpha = max(255 - frame * 8, 0)
+            shadow = pygame.Surface((100, 100))
+            shadow.fill((128, 0, 128))
+            shadow.set_alpha(alpha)
+            self.screen.blit(shadow, (boss_x - 25, boss_y - 25))
+            
+        elif char_class == "Healer":
+            # Healing effect
+            radius = frame * 2
+            for i in range(3):
+                pygame.draw.circle(
+                    self.screen,
+                    (0, 255, 0),
+                    (char_x + 50, char_y + 50),
+                    radius - i * 10,
+                    2
+                )
+        
+        # End animation after certain frames
+        if frame >= 45:
+            self.skill_active = False
+            self.skill_animation_frame = 0
 
     def run(self):
         running = True
