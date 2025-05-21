@@ -113,6 +113,18 @@ class GachaGame:
         self.battle_message = ""
         self.battle_message_timer = 0
         
+        # Initialize shop items
+        self.shop_items = [
+            {"name": "100 Gems", "cost": 1000, "cost_type": "coins", "amount": 100, "type": "gems"},
+            {"name": "500 Gems", "cost": 4500, "cost_type": "coins", "amount": 500, "type": "gems"},
+            {"name": "1000 Gems", "cost": 8000, "cost_type": "coins", "amount": 1000, "type": "gems"},
+            {"name": "EXP Potion", "cost": 500, "cost_type": "coins", "amount": 100, "type": "exp"},
+            {"name": "Super EXP Potion", "cost": 1000, "cost_type": "coins", "amount": 250, "type": "exp"},
+            {"name": "Ultra EXP Potion", "cost": 2000, "cost_type": "coins", "amount": 600, "type": "exp"},
+            {"name": "Health Potion", "cost": 100, "cost_type": "gems", "amount": 50, "type": "health"},
+            {"name": "Super Health Potion", "cost": 200, "cost_type": "gems", "amount": 150, "type": "health"}
+        ]
+        
         # Initialize boss data
         self.boss_data = [
             {"name": "Dragon King", "level": 10, "attack": 15, "health": 200, "rarity": "5★"},
@@ -534,6 +546,8 @@ class GachaGame:
             self.draw_summon()
         elif self.state == "battle_prep":
             self.draw_battle_prep()
+        elif self.state == "shop":
+            self.draw_shop()
         # Add more states here
 
     def handle_input(self, event):
@@ -547,6 +561,8 @@ class GachaGame:
             self.handle_summon_input(event)
         elif self.state == "battle_prep":
             self.handle_battle_prep_input(event)
+        elif self.state == "shop":
+            self.handle_shop_input(event)
 
     def draw_summon(self):
         # Draw background
@@ -755,6 +771,142 @@ class GachaGame:
         # Switch to battle state
         self.state = "battle"
         self.battle_message = "Battle Start!"
+        self.battle_message_timer = 60
+
+    def draw_shop(self):
+        # Draw background
+        self.screen.blit(self.backgrounds["main_menu"], (0, 0))
+        
+        # Draw title
+        title = TITLE_FONT.render("Shop", True, GOLD)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 50))
+        self.screen.blit(title, title_rect)
+        
+        # Draw currency
+        gems_text = NORMAL_FONT.render(f"Gems: {self.gems}", True, WHITE)
+        coins_text = NORMAL_FONT.render(f"Coins: {self.coins}", True, WHITE)
+        self.screen.blit(gems_text, (20, 20))
+        self.screen.blit(coins_text, (200, 20))
+        
+        # Draw shop items
+        items_per_row = 4
+        item_width = 250
+        item_height = 150
+        spacing = 30
+        start_y = 120
+        
+        for i, item in enumerate(self.shop_items):
+            row = i // items_per_row
+            col = i % items_per_row
+            
+            x = (WINDOW_WIDTH - (items_per_row * item_width + (items_per_row - 1) * spacing)) // 2 + col * (item_width + spacing)
+            y = start_y + row * (item_height + spacing)
+            
+            # Draw item box
+            item_rect = pygame.Rect(x, y, item_width, item_height)
+            pygame.draw.rect(self.screen, BLUE, item_rect, border_radius=10)
+            pygame.draw.rect(self.screen, WHITE, item_rect, 2, border_radius=10)
+            
+            # Draw item name
+            name_text = NORMAL_FONT.render(item["name"], True, WHITE)
+            name_rect = name_text.get_rect(centerx=x + item_width // 2, top=y + 20)
+            self.screen.blit(name_text, name_rect)
+            
+            # Draw item amount
+            if item["type"] == "gems":
+                amount_text = SMALL_FONT.render(f"+{item['amount']} Gems", True, GOLD)
+            elif item["type"] == "exp":
+                amount_text = SMALL_FONT.render(f"+{item['amount']} EXP", True, GREEN)
+            else:  # health
+                amount_text = SMALL_FONT.render(f"+{item['amount']} HP", True, RED)
+            amount_rect = amount_text.get_rect(centerx=x + item_width // 2, top=y + 50)
+            self.screen.blit(amount_text, amount_rect)
+            
+            # Draw cost
+            cost_text = NORMAL_FONT.render(f"{item['cost']} {item['cost_type']}", True, WHITE)
+            cost_rect = cost_text.get_rect(centerx=x + item_width // 2, bottom=y + item_height - 20)
+            self.screen.blit(cost_text, cost_rect)
+        
+        # Back button
+        back_button = Button(
+            pygame.Rect(20, WINDOW_HEIGHT - 60, 100, 40),
+            "Back",
+            RED,
+            PURPLE,
+            NORMAL_FONT,
+            lambda: self.set_state("main_menu")
+        )
+        back_button.draw(self.screen, pygame.mouse.get_pos())
+
+    def handle_shop_input(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = pygame.mouse.get_pos()
+            
+            # Handle back button
+            back_button = Button(
+                pygame.Rect(20, WINDOW_HEIGHT - 60, 100, 40),
+                "Back",
+                RED,
+                PURPLE,
+                NORMAL_FONT,
+                lambda: self.set_state("main_menu")
+            )
+            if back_button.rect.collidepoint(mouse_pos):
+                back_button.action()
+                return
+            
+            # Handle item purchase
+            items_per_row = 4
+            item_width = 250
+            item_height = 150
+            spacing = 30
+            start_y = 120
+            
+            for i, item in enumerate(self.shop_items):
+                row = i // items_per_row
+                col = i % items_per_row
+                
+                x = (WINDOW_WIDTH - (items_per_row * item_width + (items_per_row - 1) * spacing)) // 2 + col * (item_width + spacing)
+                y = start_y + row * (item_height + spacing)
+                
+                item_rect = pygame.Rect(x, y, item_width, item_height)
+                if item_rect.collidepoint(mouse_pos):
+                    self.purchase_item(item)
+                    return
+
+    def purchase_item(self, item: dict):
+        # Check if player has enough currency
+        if item["cost_type"] == "gems" and self.gems < item["cost"]:
+            self.battle_message = "Not enough gems!"
+            self.battle_message_timer = 60
+            return
+        elif item["cost_type"] == "coins" and self.coins < item["cost"]:
+            self.battle_message = "Not enough coins!"
+            self.battle_message_timer = 60
+            return
+        
+        # Apply the purchase
+        if item["cost_type"] == "gems":
+            self.gems -= item["cost"]
+        else:  # coins
+            self.coins -= item["cost"]
+        
+        # Apply the effect
+        if item["type"] == "gems":
+            self.gems += item["amount"]
+            self.battle_message = f"Purchased {item['amount']} gems!"
+        elif item["type"] == "exp" and self.selected_character:
+            self.selected_character.gain_exp(item["amount"])
+            self.battle_message = f"Gained {item['amount']} EXP!"
+        elif item["type"] == "health" and self.selected_character:
+            self.selected_character.health = min(
+                self.selected_character.health + item["amount"],
+                self.selected_character.max_health
+            )
+            self.battle_message = f"Healed for {item['amount']} HP!"
+        else:
+            self.battle_message = "Select a character first!"
+        
         self.battle_message_timer = 60
 
     def run(self):
