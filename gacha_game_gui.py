@@ -99,6 +99,15 @@ class GachaGame:
         pygame.display.set_caption("Gacha Fantasy World")
         self.clock = pygame.time.Clock()
         
+        # Add battle end state
+        self.battle_ended = False
+        self.battle_result = None  # "victory" or "defeat"
+        self.battle_rewards = {
+            "exp": 0,
+            "coins": 0,
+            "gems": 0
+        }
+        
         # Add rarity colors
         self.rarity_colors = {
             "6★": (255, 215, 0),     # LR - Gold
@@ -364,6 +373,16 @@ class GachaGame:
         ]
 
     def set_state(self, new_state: str):
+        # Reset battle state when leaving battle
+        if self.state == "battle" and new_state != "battle":
+            self.battle_ended = False
+            self.battle_result = None
+            self.battle_rewards = {"exp": 0, "coins": 0, "gems": 0}
+            self.skill_cooldown = 0
+            self.skill_active = False
+            self.battle_message = ""
+            self.battle_message_timer = 0
+        
         self.state = new_state
         # Additional state initialization can be done here
 
@@ -529,23 +548,23 @@ class GachaGame:
         if self.skill_active:
             self.draw_skill_animation(char_x, char_y, boss_x, boss_y)
         
-        # Draw buttons
+        # Draw buttons (disabled if battle ended)
         mouse_pos = pygame.mouse.get_pos()
         for button in self.battle_buttons:
-            if button.text == "Skill":
-                # Change skill button color based on cooldown
-                if self.skill_cooldown > 0:
-                    button.color = GRAY
-                    button.enabled = False
-                else:
-                    button.color = BLUE
-                    button.enabled = True
+            if self.battle_ended:
+                button.enabled = button.text == "Retreat"
+            elif button.text == "Skill":
+                button.enabled = self.skill_cooldown == 0
             button.draw(self.screen, mouse_pos)
         
         # Draw skill cooldown if applicable
         if self.skill_cooldown > 0:
             cooldown_text = SMALL_FONT.render(f"Skill CD: {self.skill_cooldown}", True, WHITE)
             self.screen.blit(cooldown_text, (130, WINDOW_HEIGHT - 90))
+
+        # Draw battle results if ended
+        if self.battle_ended:
+            self.draw_battle_results()
 
     def draw_battle_character(self, char, x: int, y: int, is_player: bool):
         # Draw character sprite
@@ -606,10 +625,15 @@ class GachaGame:
             mouse_pos = pygame.mouse.get_pos()
             for button in self.battle_buttons:
                 if button.enabled and button.rect.collidepoint(mouse_pos):
+                    if self.battle_ended and button.text != "Retreat":
+                        return
                     button.action()
 
     def perform_attack(self):
         if not self.selected_character or not self.current_boss:
+            return
+        
+        if self.battle_ended:
             return
         
         # Calculate damage
@@ -621,10 +645,36 @@ class GachaGame:
         # Apply damage and show message
         self.current_boss.health -= damage
         self.battle_message = f"Dealt {damage} damage!"
-        self.battle_message_timer = 60  # Show message for 60 frames
+        self.battle_message_timer = 60
+
+        # Check if boss is defeated
+        if self.current_boss.health <= 0:
+            self.end_battle("victory")
+        else:
+            # Boss counter-attack
+            self.boss_attack()
+
+    def boss_attack(self):
+        if self.battle_ended:
+            return
+            
+        # Calculate boss damage
+        boss_damage = random.randint(
+            self.current_boss.attack - 3,
+            self.current_boss.attack + 8
+        )
+        
+        # Apply damage
+        self.selected_character.health -= boss_damage
+        self.battle_message = f"Boss dealt {boss_damage} damage!"
+        self.battle_message_timer = 60
+
+        # Check if player is defeated
+        if self.selected_character.health <= 0:
+            self.end_battle("defeat")
 
     def use_skill(self):
-        if not self.selected_character or not self.current_boss:
+        if not self.selected_character or not self.current_boss or self.battle_ended:
             return
             
         if self.skill_cooldown > 0:
@@ -677,7 +727,13 @@ class GachaGame:
             self.battle_message = f"Used {skill['name']}! Dealt {skill_damage} damage!"
         
         self.battle_message_timer = 60
-        self.skill_cooldown = 3  # Set cooldown to 3 turns
+
+        # Check battle end after skill use
+        if self.current_boss.health <= 0:
+            self.end_battle("victory")
+        else:
+            # Boss counter-attack
+            self.boss_attack()
 
     def use_item(self):
         # Implement item usage
@@ -1384,6 +1440,85 @@ class GachaGame:
         if frame >= 45:
             self.skill_active = False
             self.skill_animation_frame = 0
+
+    def end_battle(self, result: str):
+        self.battle_ended = True
+        self.battle_result = result
+        
+        if result == "victory":
+            # Calculate rewards based on boss level
+            base_exp = self.current_boss.level * 50
+            base_coins = self.current_boss.level * 30
+            base_gems = max(1, self.current_boss.level // 5)  # 1 gem per 5 boss levels, minimum 1
+            
+            # Bonus rewards for higher level bosses
+            if self.current_boss.level >= 20:
+                base_exp *= 1.5
+                base_coins *= 1.5
+                base_gems *= 2
+            
+            self.battle_rewards = {
+                "exp": int(base_exp),
+                "coins": int(base_coins),
+                "gems": int(base_gems)
+            }
+            
+            # Apply rewards
+            self.selected_character.gain_exp(self.battle_rewards["exp"])
+            self.coins += self.battle_rewards["coins"]
+            self.gems += self.battle_rewards["gems"]
+            
+            self.battle_message = "Victory!"
+        else:
+            # Give some consolation exp for trying
+            consolation_exp = max(10, self.current_boss.level * 10)
+            self.selected_character.gain_exp(consolation_exp)
+            self.battle_message = "Defeat..."
+        
+        self.battle_message_timer = 120  # Show result longer
+
+    def draw_battle_results(self):
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(128)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw result text
+        result_color = GOLD if self.battle_result == "victory" else RED
+        result_text = TITLE_FONT.render(
+            "VICTORY!" if self.battle_result == "victory" else "DEFEAT...",
+            True,
+            result_color
+        )
+        result_rect = result_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 100))
+        self.screen.blit(result_text, result_rect)
+        
+        if self.battle_result == "victory":
+            # Draw rewards
+            rewards_text = [
+                f"EXP Gained: {self.battle_rewards['exp']}",
+                f"Coins Gained: {self.battle_rewards['coins']}",
+                f"Gems Gained: {self.battle_rewards['gems']}"
+            ]
+            
+            for i, text in enumerate(rewards_text):
+                reward = NORMAL_FONT.render(text, True, WHITE)
+                reward_rect = reward.get_rect(
+                    center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + i * 40)
+                )
+                self.screen.blit(reward, reward_rect)
+        else:
+            # Draw consolation message
+            consolation = NORMAL_FONT.render(
+                "Don't give up! Try again with a stronger character!",
+                True,
+                WHITE
+            )
+            consolation_rect = consolation.get_rect(
+                center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 40)
+            )
+            self.screen.blit(consolation, consolation_rect)
 
     def run(self):
         running = True
