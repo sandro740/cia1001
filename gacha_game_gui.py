@@ -33,6 +33,28 @@ HEADER_FONT = pygame.font.Font(FONT_PATH, 32)
 NORMAL_FONT = pygame.font.Font(FONT_PATH, 24)
 SMALL_FONT = pygame.font.Font(FONT_PATH, 18)
 
+# Particle system
+class Particle:
+    def __init__(self):
+        self.x = random.randint(0, WINDOW_WIDTH)
+        self.y = random.randint(0, WINDOW_HEIGHT)
+        self.size = random.randint(1, 3)
+        self.speed = random.uniform(0.5, 2)
+        self.color = (random.randint(100, 255), random.randint(100, 255), 255)
+        self.alpha = random.randint(50, 150)
+
+    def update(self):
+        self.y -= self.speed
+        if self.y < 0:
+            self.y = WINDOW_HEIGHT
+            self.x = random.randint(0, WINDOW_WIDTH)
+
+    def draw(self, screen):
+        surface = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(surface, (*self.color, self.alpha), (self.size, self.size), self.size)
+        screen.blit(surface, (self.x - self.size, self.y - self.size))
+
+# Enhanced button class with glowing effect
 @dataclass
 class Button:
     rect: pygame.Rect
@@ -42,17 +64,37 @@ class Button:
     font: pygame.font.Font
     action: callable
     enabled: bool = True
+    glow_color: Tuple[int, int, int] = GOLD
+    glow_strength: int = 0
 
     def draw(self, screen: pygame.Surface, mouse_pos: Tuple[int, int]):
         color = self.color
         if self.enabled and self.rect.collidepoint(mouse_pos):
             color = self.hover_color
+            self.glow_strength = min(self.glow_strength + 1, 20)
+        else:
+            self.glow_strength = max(self.glow_strength - 1, 0)
+
+        # Draw glow effect
+        if self.glow_strength > 0:
+            glow_surface = pygame.Surface((self.rect.width + 40, self.rect.height + 40), pygame.SRCALPHA)
+            for i in range(self.glow_strength):
+                alpha = int(255 * (1 - i / self.glow_strength))
+                pygame.draw.rect(glow_surface, (*self.glow_color, alpha),
+                               (i, i, self.rect.width + 40 - 2*i, self.rect.height + 40 - 2*i),
+                               border_radius=15)
+            screen.blit(glow_surface, (self.rect.x - 20, self.rect.y - 20))
         
+        # Draw button
         pygame.draw.rect(screen, color, self.rect, border_radius=10)
         pygame.draw.rect(screen, WHITE, self.rect, 2, border_radius=10)
         
+        # Draw text with shadow
+        shadow_surface = self.font.render(self.text, True, BLACK)
         text_surface = self.font.render(self.text, True, WHITE)
+        shadow_rect = shadow_surface.get_rect(center=(self.rect.centerx + 2, self.rect.centery + 2))
         text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(shadow_surface, shadow_rect)
         screen.blit(text_surface, text_rect)
 
 class Character:
@@ -99,6 +141,9 @@ class GachaGame:
         pygame.display.set_caption("Gacha Fantasy World")
         self.clock = pygame.time.Clock()
         
+        # Initialize particles
+        self.particles = [Particle() for _ in range(50)]
+        
         # Add battle end state
         self.battle_ended = False
         self.battle_result = None  # "victory" or "defeat"
@@ -125,11 +170,15 @@ class GachaGame:
             "3★": (0, 191, 255, 128),    # R - Deep Sky Blue
             "2★": (192, 192, 192, 128)   # N - Silver
         }
+
+        # Title animation
+        self.title_glow = 0
+        self.title_glow_increasing = True
         
         # Game state
-        self.state = "main_menu"  # main_menu, character_select, battle, etc.
-        self.characters: List[Character] = []
-        self.selected_character: Optional[Character] = None
+        self.state = "main_menu"
+        self.characters = []
+        self.selected_character = None
         self.gems = 1000
         self.coins = 2000
         
@@ -245,10 +294,11 @@ class GachaGame:
 
     def create_gradient_background(self, surface: pygame.Surface):
         for y in range(WINDOW_HEIGHT):
+            # Create a more vibrant gradient
             color = (
-                int(20 + (y / WINDOW_HEIGHT) * 40),
-                int(10 + (y / WINDOW_HEIGHT) * 20),
-                int(50 + (y / WINDOW_HEIGHT) * 70)
+                int(40 + (y / WINDOW_HEIGHT) * 60),  # More red
+                int(0 + (y / WINDOW_HEIGHT) * 40),   # More blue
+                int(80 + (y / WINDOW_HEIGHT) * 100)  # More purple
             )
             pygame.draw.line(surface, color, (0, y), (WINDOW_WIDTH, y))
 
@@ -394,16 +444,47 @@ class GachaGame:
         # Draw background
         self.screen.blit(self.backgrounds["main_menu"], (0, 0))
         
-        # Draw title
-        title = TITLE_FONT.render("Gacha Fantasy World", True, GOLD)
+        # Update and draw particles
+        for particle in self.particles:
+            particle.update()
+            particle.draw(self.screen)
+        
+        # Animate title glow
+        if self.title_glow_increasing:
+            self.title_glow = min(self.title_glow + 2, 50)
+            if self.title_glow >= 50:
+                self.title_glow_increasing = False
+        else:
+            self.title_glow = max(self.title_glow - 2, 0)
+            if self.title_glow <= 0:
+                self.title_glow_increasing = True
+        
+        # Draw title with glow effect
+        title_text = "Gacha Fantasy World"
+        for i in range(self.title_glow):
+            alpha = int(255 * (1 - i / self.title_glow))
+            title_glow = TITLE_FONT.render(title_text, True, (*GOLD, alpha))
+            title_rect = title_glow.get_rect(center=(WINDOW_WIDTH // 2, 100 - i//2))
+            self.screen.blit(title_glow, title_rect)
+        
+        title = TITLE_FONT.render(title_text, True, GOLD)
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 100))
         self.screen.blit(title, title_rect)
         
-        # Draw currency
-        gems_text = NORMAL_FONT.render(f"Gems: {self.gems}", True, WHITE)
-        coins_text = NORMAL_FONT.render(f"Coins: {self.coins}", True, WHITE)
-        self.screen.blit(gems_text, (20, 20))
-        self.screen.blit(coins_text, (20, 50))
+        # Draw currency with icons and formatting
+        gem_icon = "💎"
+        coin_icon = "🪙"
+        gems_text = NORMAL_FONT.render(f"{gem_icon} Gems: {self.gems:,}", True, WHITE)
+        coins_text = NORMAL_FONT.render(f"{coin_icon} Coins: {self.coins:,}", True, WHITE)
+        
+        # Draw currency background panels
+        for i, text in enumerate([gems_text, coins_text]):
+            text_rect = text.get_rect(topleft=(20, 20 + i * 40))
+            panel = pygame.Surface((text_rect.width + 20, text_rect.height + 10))
+            panel.fill((40, 20, 60))
+            panel.set_alpha(200)
+            self.screen.blit(panel, (text_rect.x - 10, text_rect.y - 5))
+            self.screen.blit(text, text_rect)
         
         # Draw buttons
         mouse_pos = pygame.mouse.get_pos()
@@ -448,7 +529,7 @@ class GachaGame:
             button.draw(self.screen, mouse_pos)
 
     def draw_character_card(self, char: Character, x: int, y: int, selected: bool):
-        # Draw card background
+        # Draw card background with enhanced gradient
         card_width = 350
         card_height = 200
         card_rect = pygame.Rect(x, y, card_width, card_height)
@@ -456,34 +537,42 @@ class GachaGame:
         # Get rarity color
         bg_color = self.rarity_colors.get(char.rarity, GRAY)
         
-        # Create gradient effect
-        gradient_surface = pygame.Surface((card_width, card_height))
+        # Create gradient surface with alpha
+        gradient_surface = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
         for i in range(card_height):
-            # Darken color as we go down
-            darkness = 1 - (i / card_height * 0.5)  # 50% darker at bottom
-            gradient_color = tuple(int(c * darkness) for c in bg_color)
+            # Create a more dynamic gradient
+            progress = i / card_height
+            gradient_color = (
+                int(bg_color[0] * (1 - progress * 0.5)),
+                int(bg_color[1] * (1 - progress * 0.5)),
+                int(bg_color[2] * (1 - progress * 0.5)),
+                180
+            )
             pygame.draw.line(gradient_surface, gradient_color, (0, i), (card_width, i))
         
-        # Apply gradient with transparency
-        gradient_surface.set_alpha(180)
-        
-        # Draw base card
-        pygame.draw.rect(self.screen, (40, 40, 40), card_rect, border_radius=15)
+        # Draw base card with rounded corners
+        pygame.draw.rect(self.screen, (20, 10, 30), card_rect, border_radius=15)
         self.screen.blit(gradient_surface, card_rect, special_flags=pygame.BLEND_ALPHA_SDL2)
         
-        # Draw border
+        # Draw glowing border for selected cards
         if selected:
-            # Draw glowing effect for selected cards
             for i in range(3):
+                alpha = 255 - i * 60
                 border_rect = card_rect.inflate(i * 4, i * 4)
-                pygame.draw.rect(self.screen, bg_color, border_rect, 2, border_radius=15)
+                pygame.draw.rect(self.screen, (*bg_color, alpha), border_rect, 2, border_radius=15)
         else:
-            pygame.draw.rect(self.screen, bg_color, card_rect, 2, border_radius=15)
+            pygame.draw.rect(self.screen, (*bg_color, 255), card_rect, 2, border_radius=15)
         
-        # Draw rarity indicator
+        # Draw rarity badge with glow
         rarity_width = 60
         rarity_height = 30
         rarity_rect = pygame.Rect(x + card_width - rarity_width - 10, y + 10, rarity_width, rarity_height)
+        
+        # Draw rarity badge glow
+        for i in range(3):
+            glow_rect = rarity_rect.inflate(i * 4, i * 4)
+            pygame.draw.rect(self.screen, (*bg_color, 100 - i * 30), glow_rect, border_radius=5)
+        
         pygame.draw.rect(self.screen, bg_color, rarity_rect, border_radius=5)
         pygame.draw.rect(self.screen, WHITE, rarity_rect, 1, border_radius=5)
         
@@ -491,34 +580,71 @@ class GachaGame:
         rarity_text_rect = rarity_text.get_rect(center=rarity_rect.center)
         self.screen.blit(rarity_text, rarity_text_rect)
         
-        # Draw character sprite
+        # Draw character sprite with glow effect
         sprite_rect = pygame.Rect(x + 10, y + 10, 80, 80)
         if char.sprite:
             self.screen.blit(char.sprite, sprite_rect)
         else:
-            pygame.draw.rect(self.screen, bg_color, sprite_rect)  # Use rarity color for placeholder
+            # Draw placeholder with glow
+            for i in range(3):
+                glow_rect = sprite_rect.inflate(i * 4, i * 4)
+                pygame.draw.rect(self.screen, (*bg_color, 100 - i * 30), glow_rect)
+            pygame.draw.rect(self.screen, bg_color, sprite_rect)
         
         # Draw character info with enhanced styling
         name_text = NORMAL_FONT.render(char.name, True, WHITE)
-        level_text = SMALL_FONT.render(f"Level {char.level}", True, WHITE)
+        level_text = SMALL_FONT.render(f"Level {char.level}", True, GOLD)
         stats_text = SMALL_FONT.render(f"ATK: {char.attack} | HP: {char.health}/{char.max_health}", True, WHITE)
-        exp_text = SMALL_FONT.render(f"EXP: {char.exp}/{char.exp_to_level}", True, WHITE)
+        exp_text = SMALL_FONT.render(f"EXP: {char.exp:,}/{char.exp_to_level:,}", True, WHITE)
         
-        self.screen.blit(name_text, (x + 100, y + 20))
-        self.screen.blit(level_text, (x + 100, y + 50))
-        self.screen.blit(stats_text, (x + 100, y + 80))
-        self.screen.blit(exp_text, (x + 100, y + 110))
+        # Add text shadows
+        for text, pos_y in [(name_text, y + 20), (level_text, y + 50), 
+                           (stats_text, y + 80), (exp_text, y + 110)]:
+            shadow = NORMAL_FONT.render(text.get_string(), True, BLACK)
+            self.screen.blit(shadow, (x + 102, pos_y + 2))
+            self.screen.blit(text, (x + 100, pos_y))
         
-        # Draw exp bar with rarity color
+        # Draw exp bar with enhanced styling
         exp_bar_rect = pygame.Rect(x + 100, y + 140, 200, 20)
-        pygame.draw.rect(self.screen, (40, 40, 40), exp_bar_rect)
+        
+        # Draw exp bar background with gradient
+        exp_bg_surface = pygame.Surface((exp_bar_rect.width, exp_bar_rect.height))
+        for i in range(exp_bar_rect.height):
+            color = (
+                max(20 - i, 0),
+                max(20 - i, 0),
+                max(30 - i, 0)
+            )
+            pygame.draw.line(exp_bg_surface, color, (0, i), (exp_bar_rect.width, i))
+        self.screen.blit(exp_bg_surface, exp_bar_rect)
+        
+        # Draw exp fill with gradient and glow
+        exp_ratio = char.exp / char.exp_to_level
         exp_fill_rect = pygame.Rect(
             exp_bar_rect.x,
             exp_bar_rect.y,
-            exp_bar_rect.width * (char.exp / char.exp_to_level),
+            exp_bar_rect.width * exp_ratio,
             exp_bar_rect.height
         )
-        pygame.draw.rect(self.screen, bg_color, exp_fill_rect)
+        
+        if exp_fill_rect.width > 0:
+            exp_fill_surface = pygame.Surface((exp_fill_rect.width, exp_fill_rect.height))
+            for i in range(exp_fill_rect.height):
+                progress = i / exp_fill_rect.height
+                color = (
+                    int(bg_color[0] * (1 - progress * 0.3)),
+                    int(bg_color[1] * (1 - progress * 0.3)),
+                    int(bg_color[2] * (1 - progress * 0.3))
+                )
+                pygame.draw.line(exp_fill_surface, color, (0, i), (exp_fill_rect.width, i))
+            self.screen.blit(exp_fill_surface, exp_fill_rect)
+            
+            # Add glow to filled portion
+            glow_surf = pygame.Surface((exp_fill_rect.width, exp_fill_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, (*bg_color, 100), (0, 0, exp_fill_rect.width, exp_fill_rect.height))
+            self.screen.blit(glow_surf, exp_fill_rect, special_flags=pygame.BLEND_ADD)
+        
+        # Draw exp bar border
         pygame.draw.rect(self.screen, WHITE, exp_bar_rect, 1)
 
     def draw_battle(self):
@@ -567,19 +693,33 @@ class GachaGame:
             self.draw_battle_results()
 
     def draw_battle_character(self, char, x: int, y: int, is_player: bool):
-        # Draw character sprite
+        # Draw character sprite with enhanced effects
         sprite_rect = pygame.Rect(x, y, 100, 100)
+        sprite_color = RED if is_player else PURPLE
+        
+        # Draw sprite glow
+        for i in range(3):
+            glow_rect = sprite_rect.inflate(i * 6, i * 6)
+            pygame.draw.rect(self.screen, (*sprite_color, 80 - i * 20), glow_rect)
+        
         if char.sprite:
             self.screen.blit(char.sprite, sprite_rect)
         else:
-            pygame.draw.rect(self.screen, RED if is_player else PURPLE, sprite_rect)
+            pygame.draw.rect(self.screen, sprite_color, sprite_rect)
         
-        # Draw health bar
+        # Draw health bar with enhanced styling
         health_width = 200
         health_height = 20
         health_rect = pygame.Rect(x - 50, y - 30, health_width, health_height)
-        pygame.draw.rect(self.screen, RED, health_rect)
         
+        # Draw health bar background gradient
+        health_bg = pygame.Surface((health_width, health_height))
+        for i in range(health_height):
+            color = (40 - i, 0, 0)
+            pygame.draw.line(health_bg, color, (0, i), (health_width, i))
+        self.screen.blit(health_bg, health_rect)
+        
+        # Draw health fill with gradient
         health_percent = char.health / char.max_health
         health_fill_rect = pygame.Rect(
             health_rect.x,
@@ -587,15 +727,35 @@ class GachaGame:
             health_rect.width * health_percent,
             health_rect.height
         )
-        pygame.draw.rect(self.screen, GREEN, health_fill_rect)
+        
+        if health_fill_rect.width > 0:
+            health_fill = pygame.Surface((health_fill_rect.width, health_height))
+            for i in range(health_height):
+                progress = i / health_height
+                if health_percent > 0.5:
+                    color = (int(100 * (1 - progress)), 255, 0)  # Green to Yellow
+                else:
+                    color = (255, int(255 * health_percent * 2 * (1 - progress)), 0)  # Yellow to Red
+                pygame.draw.line(health_fill, color, (0, i), (health_fill_rect.width, i))
+            self.screen.blit(health_fill, health_fill_rect)
+            
+            # Add glow to health bar
+            glow_surf = pygame.Surface((health_fill_rect.width, health_fill_rect.height), pygame.SRCALPHA)
+            glow_color = (0, 255, 0) if health_percent > 0.5 else (255, 0, 0)
+            pygame.draw.rect(glow_surf, (*glow_color, 100), (0, 0, health_fill_rect.width, health_fill_rect.height))
+            self.screen.blit(glow_surf, health_fill_rect, special_flags=pygame.BLEND_ADD)
+        
         pygame.draw.rect(self.screen, WHITE, health_rect, 1)
         
-        # Draw character info
+        # Draw character info with enhanced styling
         name_text = NORMAL_FONT.render(f"{char.name} Lv.{char.level}", True, WHITE)
-        hp_text = SMALL_FONT.render(f"HP: {char.health}/{char.max_health}", True, WHITE)
+        hp_text = SMALL_FONT.render(f"HP: {char.health:,}/{char.max_health:,}", True, WHITE)
         
-        self.screen.blit(name_text, (x - 50, y - 60))
-        self.screen.blit(hp_text, (x - 50, y + 110))
+        # Draw text shadows
+        for text, pos_y in [(name_text, y - 60), (hp_text, y + 110)]:
+            shadow = text.get_font().render(text.get_string(), True, BLACK)
+            self.screen.blit(shadow, (x - 48, pos_y + 2))
+            self.screen.blit(text, (x - 50, pos_y))
 
     def handle_character_select_input(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
