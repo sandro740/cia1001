@@ -1,3 +1,6 @@
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+
 import pygame
 import sys
 import time
@@ -5,11 +8,9 @@ import random
 import math
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-import os
 
 # Initialize Pygame
 pygame.init()
-pygame.font.init()
 
 # Constants
 WINDOW_WIDTH = 1280
@@ -25,6 +26,10 @@ BLUE = (0, 0, 255)
 GOLD = (255, 215, 0)
 PURPLE = (128, 0, 128)
 GRAY = (128, 128, 128)
+
+# Create display
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+pygame.display.set_caption("Gacha Fantasy World")
 
 # Fonts
 FONT_PATH = pygame.font.get_default_font()
@@ -111,6 +116,23 @@ class Character:
         self.sprite = None  # Will hold character sprite
         self.animation_frames = []  # Will hold animation frames
         self.current_frame = 0
+        
+        # Add special stats based on rarity
+        if rarity == "6★":
+            self.crit_rate = 0.15  # 15% base crit rate
+            self.crit_damage = 2.0  # 200% crit damage
+        elif rarity == "5★":
+            self.crit_rate = 0.10
+            self.crit_damage = 1.8
+        elif rarity == "4★":
+            self.crit_rate = 0.08
+            self.crit_damage = 1.6
+        elif rarity == "3★":
+            self.crit_rate = 0.05
+            self.crit_damage = 1.5
+        else:
+            self.crit_rate = 0.03
+            self.crit_damage = 1.3
 
     def gain_exp(self, amount: int, material=None) -> bool:
         bonus_exp = material.exp_bonus if material else 0
@@ -125,20 +147,36 @@ class Character:
     def level_up(self):
         self.level += 1
         rarity_multiplier = {
-            "6★": 1.5, "5★": 1.3, "4★": 1.2, "3★": 1.1
+            "6★": 2.0,  # Increased multipliers
+            "5★": 1.8,
+            "4★": 1.5,
+            "3★": 1.3,
+            "2★": 1.1
         }
         multiplier = rarity_multiplier.get(self.rarity, 1.1)
         
-        self.attack += int(2 * multiplier)
-        self.max_health += int(5 * multiplier)
+        # Enhanced stat growth
+        attack_growth = int(3 * multiplier)
+        health_growth = int(8 * multiplier)
+        
+        # Add random bonus stats
+        attack_bonus = random.randint(0, int(2 * multiplier))
+        health_bonus = random.randint(0, int(5 * multiplier))
+        
+        self.attack += attack_growth + attack_bonus
+        self.max_health += health_growth + health_bonus
         self.health = self.max_health
         self.exp -= self.exp_to_level
         self.exp_to_level = int(self.exp_to_level * 1.2)
+        
+        # Increase crit stats slightly on level up
+        if self.rarity in ["6★", "5★", "4★"]:
+            self.crit_rate = min(self.crit_rate + 0.002, 0.5)  # Cap at 50%
+            self.crit_damage = min(self.crit_damage + 0.05, 3.0)  # Cap at 300%
 
 class GachaGame:
     def __init__(self):
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        pygame.display.set_caption("Gacha Fantasy World")
+        self.screen = screen
         self.clock = pygame.time.Clock()
         
         # Initialize particles
@@ -598,11 +636,17 @@ class GachaGame:
         exp_text = SMALL_FONT.render(f"EXP: {char.exp:,}/{char.exp_to_level:,}", True, WHITE)
         
         # Add text shadows
-        for text, pos_y in [(name_text, y + 20), (level_text, y + 50), 
-                           (stats_text, y + 80), (exp_text, y + 110)]:
-            shadow = NORMAL_FONT.render(text.get_string(), True, BLACK)
+        texts = [
+            (name_text, y + 20, NORMAL_FONT, char.name),
+            (level_text, y + 50, SMALL_FONT, f"Level {char.level}"),
+            (stats_text, y + 80, SMALL_FONT, f"ATK: {char.attack} | HP: {char.health}/{char.max_health}"),
+            (exp_text, y + 110, SMALL_FONT, f"EXP: {char.exp:,}/{char.exp_to_level:,}")
+        ]
+        
+        for text_surface, pos_y, font, text_str in texts:
+            shadow = font.render(text_str, True, BLACK)
             self.screen.blit(shadow, (x + 102, pos_y + 2))
-            self.screen.blit(text, (x + 100, pos_y))
+            self.screen.blit(text_surface, (x + 100, pos_y))
         
         # Draw exp bar with enhanced styling
         exp_bar_rect = pygame.Rect(x + 100, y + 140, 200, 20)
@@ -752,10 +796,15 @@ class GachaGame:
         hp_text = SMALL_FONT.render(f"HP: {char.health:,}/{char.max_health:,}", True, WHITE)
         
         # Draw text shadows
-        for text, pos_y in [(name_text, y - 60), (hp_text, y + 110)]:
-            shadow = text.get_font().render(text.get_string(), True, BLACK)
+        texts = [
+            (name_text, y - 60, NORMAL_FONT, f"{char.name} Lv.{char.level}"),
+            (hp_text, y + 110, SMALL_FONT, f"HP: {char.health:,}/{char.max_health:,}")
+        ]
+        
+        for text_surface, pos_y, font, text_str in texts:
+            shadow = font.render(text_str, True, BLACK)
             self.screen.blit(shadow, (x - 48, pos_y + 2))
-            self.screen.blit(text, (x - 50, pos_y))
+            self.screen.blit(text_surface, (x - 50, pos_y))
 
     def handle_character_select_input(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1005,32 +1054,48 @@ class GachaGame:
             roll = random.random() * 100
             if roll < 1:  # 1% LR
                 rarity = "6★"
-                base_attack = random.randint(25, 30)
-                base_health = random.randint(120, 150)
+                base_attack = random.randint(45, 55)  # Significantly stronger
+                base_health = random.randint(220, 250)
             elif roll < 5:  # 4% SSR
                 rarity = "5★"
-                base_attack = random.randint(20, 25)
-                base_health = random.randint(100, 120)
+                base_attack = random.randint(35, 45)
+                base_health = random.randint(180, 220)
             elif roll < 20:  # 15% SR
                 rarity = "4★"
-                base_attack = random.randint(15, 20)
-                base_health = random.randint(80, 100)
+                base_attack = random.randint(25, 35)
+                base_health = random.randint(140, 180)
             elif roll < 50:  # 30% R
                 rarity = "3★"
-                base_attack = random.randint(10, 15)
-                base_health = random.randint(60, 80)
+                base_attack = random.randint(18, 25)
+                base_health = random.randint(100, 140)
             else:  # 50% N
                 rarity = "2★"
-                base_attack = random.randint(5, 10)
-                base_health = random.randint(40, 60)
+                base_attack = random.randint(12, 18)
+                base_health = random.randint(80, 100)
             
             # Generate random character name
-            prefixes = ["Dark", "Light", "Fire", "Water", "Earth", "Wind"]
-            classes = ["Warrior", "Mage", "Archer", "Knight", "Assassin", "Healer"]
+            prefixes = ["Dark", "Light", "Fire", "Water", "Earth", "Wind", "Thunder", "Ice", 
+                       "Shadow", "Holy", "Chaos", "Order", "Storm", "Nature", "Cosmic"]
+            classes = ["Warrior", "Mage", "Archer", "Knight", "Assassin", "Healer", 
+                      "Paladin", "Berserker", "Summoner", "Necromancer", "Druid", "Monk"]
             name = f"{random.choice(prefixes)} {random.choice(classes)}"
             
-            # Create character
+            # Create character with enhanced stats
             character = Character(name, rarity, base_attack, base_health)
+            
+            # Give bonus starting level based on rarity
+            if rarity == "6★":
+                character.level = 5  # LR starts at level 5
+                for _ in range(4):  # Level up 4 times
+                    character.level_up()
+            elif rarity == "5★":
+                character.level = 3  # SSR starts at level 3
+                for _ in range(2):  # Level up 2 times
+                    character.level_up()
+            elif rarity == "4★":
+                character.level = 2  # SR starts at level 2
+                character.level_up()  # Level up once
+            
             results.append(character)
         
         # Start summon animation
@@ -1683,12 +1748,16 @@ class GachaGame:
     def run(self):
         running = True
         while running:
-            # Event handling
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                
+            # Handle single event at a time
+            event = pygame.event.poll()
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type != pygame.NOEVENT:
                 self.handle_input(event)
+            
+            # Handle mouse state
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_pressed = pygame.mouse.get_pressed()
             
             # Update game state
             self.update()
@@ -1701,7 +1770,12 @@ class GachaGame:
             self.clock.tick(FPS)
         
         pygame.quit()
+        sys.exit()
 
 if __name__ == "__main__":
+    # Set up display mode
+    pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    
+    # Create and run game
     game = GachaGame()
     game.run() 
