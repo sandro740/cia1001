@@ -13,16 +13,19 @@ if not api_key:
 print("Setting up OpenAI client...")
 client = OpenAI(api_key=api_key)
 
+print("\nWhat would you like to ask the AI? (Type your question and press Enter)")
+user_input = input("> ")
+
 try:
-    print("Sending request to OpenAI...")
+    print("\nSending request to OpenAI...")
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Write a short poem about space."}
+            {"role": "user", "content": user_input}
         ]
     )
-    print("\nGenerated Poem:")
+    print("\nAI Response:")
     print(response.choices[0].message.content)
 except Exception as e:
     print(f"An error occurred: {str(e)}")
